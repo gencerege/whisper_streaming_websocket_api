@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <button id="record"> Record </button>
+    
+
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
+    <script>
+      // === Configuration Constants ===
+      const PRE_BUFFER_FRAME_COUNT = 8;  // Maintain the last 16 frames as pre-buffer.
+      const TARGET_FRAME_COUNT    = 31;   // Send a chunk once we accumulate 31 frames.
+    
+      // === Global Variables ===
+      let myvad;                         // The VAD instance.
+      let framecounter = 0;
+      const socket = new WebSocket('ws://127.0.0.1:5004/save');
+      
+      // Use a single buffer for both pre-buffering and accumulating active speech frames.
+      let activeBuffer = [];
+      // Global flag indicating whether we're in an active speech segment.
+      let speechActive = false;
+    
+      // Utility function to concatenate an array of Float32Arrays into one Float32Array.
+      function concatFrames(frames) {
+        const totalLength = frames.reduce((sum, frame) => sum + frame.length, 0);
+        const result = new Float32Array(totalLength);
+        let offset = 0;
+        frames.forEach(frame => {
+          result.set(frame, offset);
+          offset += frame.length;
+        });
+        return result;
+      }
+    
+      // === onFrameProcessed Callback ===
+      function handleFrameProcessed(probabilities, frame) {
+        if (!speechActive) {
+          // When not in speech, append the incoming frame and keep only the last PRE_BUFFER_FRAME_COUNT frames.
+          activeBuffer.push(frame);
+          if (activeBuffer.length > PRE_BUFFER_FRAME_COUNT) {
+            activeBuffer.shift();  // Remove the oldest frame.
+          }
+          console.log("Idle frame inserted", framecounter, ":", probabilities);
+          framecounter++;
+        } else {
+          // When speech is active, append every incoming frame to activeBuffer.
+          activeBuffer.push(frame);
+          console.log("Speech frame inserted", framecounter, ":", probabilities);
+          framecounter++;
+    
+          // Once we've accumulated TARGET_FRAME_COUNT frames, send them.
+          if (activeBuffer.length >= TARGET_FRAME_COUNT) {
+            const chunkToSend = concatFrames(activeBuffer);
+            socket.send(chunkToSend.buffer);
+            console.log("Sent active chunk of", activeBuffer.length, "frames.");
+    
+            // After sending, keep only the last PRE_BUFFER_FRAME_COUNT frames
+            activeBuffer = []
+          }
+        }
+      }
+    
+      // === onSpeechStart Callback ===
+      function handleSpeechStart() {
+        console.log("Speech Start detected.");
+        speechActive = true;
+        // No need to reinitialize activeBuffer here since it already holds the pre-buffer frames.
+      }
+    
+      // === onSpeechEnd Callback ===
+      function handleSpeechEnd(audio) {
+        console.log("Speech End detected.");
+        speechActive = false;
+    
+        // If there are any frames left in activeBuffer, send them as the final chunk.
+        if (activeBuffer.length > 0) {
+          const finalChunk = concatFrames(activeBuffer);
+          socket.send(finalChunk.buffer);
+          console.log("Sent final active chunk of", finalChunk.length, "samples.");
+        }
+    
+        // Update activeBuffer to keep the last PRE_BUFFER_FRAME_COUNT frames for the next speech segment. 
+        // This causes repetition. How?
+        // if we have a speechStart event very close to a SpeechEnd event then the section sliced here will be sent twice. 
+        // For example if a speech end is detected on merhaba bu (END) and after 3 frames, we have (START) the next frame to be sent will start from bu again. 
+        // This start from bu should not happen. 
+        // Why did we implement this in the first place?
+        // if activeBuffer is completely empty this should not be a problem. lets assume we instantly get speechStart after speech end. 
+        // in that case if there is pre speech, it is most likely in the previous frame already. 
+        // or we get 1 frame of no speech and then speech Start. Which should be fine too as it will almost be continuous now. 
+        // We do not need to save prepend buffer like this 
+        // activeBuffer = activeBuffer.slice(-PRE_BUFFER_FRAME_COUNT);
+        activeBuffer = []
+      }
+      // // Default V5 ProcessorOptions
+      // export const defaultV5FrameProcessorOptions: FrameProcessorOptions = {
+      //   positiveSpeechThreshold: 0.5, // Thresholds may greatly vary depending on the environment its being used. 0.5 is good for a decently high volume mic input.
+      //   negativeSpeechThreshold: 0.5 - 0.15,
+      //   preSpeechPadFrames: 3, // This does not matter (since we do preSpeechPadding ourselves. )
+      //   redemptionFrames: 24, // This can be changed to 16.
+      //   frameSamples: 512,
+      //   minSpeechFrames: 9, // This can be lowered for better single word detection. (But also does not matter since we treat VADMisfire Same as SpeechEnd)
+      //   submitUserSpeechOnPause: false,
+      // }
+      // === VAD Instance Creation & Starting ===
+      async function main() {
+        myvad = await vad.MicVAD.new({
+          model: "v5",
+          frameSamples: 512,
+          onSpeechStart: handleSpeechStart,
+          onSpeechEnd: handleSpeechEnd,
+          onVADMisfire: handleSpeechEnd,
+          onFrameProcessed: handleFrameProcessed
+        });
+        myvad.start();
+      }
+    
+      // === Button Control Logic ===
+      const record_button = document.getElementById('record');
+      let isFirstClick = true;
+      record_button.onclick = () => {
+        if (isFirstClick) {
+          main();
+          isFirstClick = false;
+          vadActive = true;
+          record_button.textContent = "Pause";
+        } else if (myvad.listening) {
+          handleSpeechEnd() // Pause triggers onSpeechEnd() so we do not lose any audio when we pause.
+          myvad.pause();
+          socket.send("STOP");
+          vadActive = false;
+          record_button.textContent = "Record";
+        } else if (!myvad.listening) {
+          myvad.start();
+          vadActive = true;
+          record_button.textContent = "Pause";
+        }
+      };
+    </script>
+    
+</body>
+</html>
+
