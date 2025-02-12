@@ -7,20 +7,25 @@
 </head>
 <body>
     <button id="record"> Record </button>
+
+    <p id="insert"> </p>
     
 
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
     <script>
       // === Configuration Constants ===
-      const PRE_BUFFER_FRAME_COUNT = 8;  // Maintain the last 16 frames as pre-buffer.
+      const PRE_BUFFER_FRAME_COUNT = 8;  // Maintain the last 8 frames as pre-buffer.
       const TARGET_FRAME_COUNT    = 31;   // Send a chunk once we accumulate 31 frames.
     
       // === Global Variables ===
       let myvad;                         // The VAD instance.
       let framecounter = 0;
+      const insert = document.getElementById('insert')
       const socket = new WebSocket('ws://127.0.0.1:5004/save');
-      
+      socket.onmessage = (event) => {
+        insert.textContent += event.data
+      }
       // Use a single buffer for both pre-buffering and accumulating active speech frames.
       let activeBuffer = [];
       // Global flag indicating whether we're in an active speech segment.
@@ -46,19 +51,19 @@
           if (activeBuffer.length > PRE_BUFFER_FRAME_COUNT) {
             activeBuffer.shift();  // Remove the oldest frame.
           }
-          console.log("Idle frame inserted", framecounter, ":", probabilities);
+          // console.log("Idle frame inserted", framecounter, ":", probabilities);
           framecounter++;
         } else {
           // When speech is active, append every incoming frame to activeBuffer.
           activeBuffer.push(frame);
-          console.log("Speech frame inserted", framecounter, ":", probabilities);
+          // console.log("Speech frame inserted", framecounter, ":", probabilities);
           framecounter++;
     
           // Once we've accumulated TARGET_FRAME_COUNT frames, send them.
           if (activeBuffer.length >= TARGET_FRAME_COUNT) {
             const chunkToSend = concatFrames(activeBuffer);
             socket.send(chunkToSend.buffer);
-            console.log("Sent active chunk of", activeBuffer.length, "frames.");
+            console.log("Sent chunk of", activeBuffer.length, "frames.");
     
             // After sending, keep only the last PRE_BUFFER_FRAME_COUNT frames
             activeBuffer = []
@@ -82,7 +87,7 @@
         if (activeBuffer.length > 0) {
           const finalChunk = concatFrames(activeBuffer);
           socket.send(finalChunk.buffer);
-          console.log("Sent final active chunk of", finalChunk.length, "samples.");
+          console.log("Sent remaining chunk of", finalChunk.length, "samples.");
         }
     
         // Update activeBuffer to keep the last PRE_BUFFER_FRAME_COUNT frames for the next speech segment. 
@@ -128,17 +133,18 @@
         if (isFirstClick) {
           main();
           isFirstClick = false;
-          vadActive = true;
+
           record_button.textContent = "Pause";
         } else if (myvad.listening) {
-          handleSpeechEnd() // Pause triggers onSpeechEnd() so we do not lose any audio when we pause.
+          console.log(myvad.spee)
+          if (speechActive) {
+            handleSpeechEnd()
+          } // Pause triggers onSpeechEnd() so we do not lose any audio when we pause. only if while speech is active
           myvad.pause();
           socket.send("STOP");
-          vadActive = false;
           record_button.textContent = "Record";
         } else if (!myvad.listening) {
           myvad.start();
-          vadActive = true;
           record_button.textContent = "Pause";
         }
       };

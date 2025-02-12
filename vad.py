@@ -2,19 +2,16 @@ from flask import Flask, render_template
 from flask_sock import Sock
 import numpy as np
 import wave
+import threading
+import time
 
 app = Flask(__name__)
 
-sock = Sock(app)
-
-@app.route("/")
-def home():
-    return render_template("vad.html")
-
-@sock.route("/save")
-def save_audio(ws):
-    all_speech = np.array([], dtype=np.float32)
+def receive_audio(ws):
+    global recording_on
+    recording_on = True
     while True: 
+        global all_speech
         data = ws.receive() 
         if data == "STOP":
             all_speech_int = (all_speech * 32767).astype(np.int16)
@@ -25,12 +22,50 @@ def save_audio(ws):
             audio_file.writeframes(b''.join(all_speech_int))
             audio_file.close()
             all_speech = np.array([], dtype=np.float32)
+            ws.send("Recorded Segment Saved")
+            recording_on = False
 
         else: 
+            recording_on = True
+            # ws.send("Voice Received\n")
             audio = np.frombuffer(data, dtype=np.float32)
-            print(len(audio))
+            # print(len(audio))
             all_speech = np.append(all_speech, audio)
-            print("SA")
+            # print("SA")
+
+
+
+sock = Sock(app)
+sockets = []
+@app.route("/")
+def home():
+    return render_template("vad.html")
+
+all_speech = np.array([], dtype=np.float32)
+recording_on = False
+@sock.route("/save")
+def save_audio(ws):
+    receiver_thread = threading.Thread(target = receive_audio, args = [ws])
+    receiver_thread.start()
+    previous_length = 0
+    while True:
+        if recording_on:
+            length_of_new_frame = len(all_speech) - previous_length
+            if length_of_new_frame >= 15872:
+                # ws.send(f"Full frame: {len(all_speech[previous_length: previous_length + length_of_new_frame])}")
+                ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
+                previous_length += length_of_new_frame
+
+            elif 15872 > length_of_new_frame > 0:
+                # ws.send(f"End frame: {length_of_new_frame}")
+                ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
+                previous_length += length_of_new_frame
+
+            else:
+                pass
+        else:
+            previous_length = 0    
+
 
 
 
