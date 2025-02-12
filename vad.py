@@ -11,35 +11,41 @@ app = Flask(__name__)
 def receive_audio(ws):
     global recording_on
     recording_on = "ON"
-    while True: 
-        global all_speech
-        data = ws.receive() 
-        if data == "Pause":
-            all_speech_int = (all_speech * 32767).astype(np.int16)
-            audio_file = wave.open("output.wav", "wb")
-            audio_file.setnchannels(1)
-            audio_file.setsampwidth(2)
-            audio_file.setframerate(16000)
-            audio_file.writeframes(b''.join(all_speech_int))
-            audio_file.close()
-            ws.send("Recorded Segment Saved")
-            recording_on = "PAUSED"
+    try:
+        while True: 
+            global all_speech
+            data = ws.receive() 
+            if data == "Pause":
+                all_speech_int = (all_speech * 32767).astype(np.int16)
+                audio_file = wave.open("output.wav", "wb")
+                audio_file.setnchannels(1)
+                audio_file.setsampwidth(2)
+                audio_file.setframerate(16000)
+                audio_file.writeframes(b''.join(all_speech_int))
+                audio_file.close()
+                ws.send("Recorded Segment Saved")
+                recording_on = "PAUSED"
 
-        else: 
-            print("aaa")
-            recording_on = "ON"
-            # ws.send("Voice Received\n")
-            audio = np.frombuffer(data, dtype=np.float32)
-            # print(len(audio))
-            all_speech = np.append(all_speech, audio)
-            # print("SA")
+            else: 
+                print("aaa")
+                recording_on = "ON"
+                # ws.send("Voice Received\n")
+                audio = np.frombuffer(data, dtype=np.float32)
+                # print(len(audio))
+                all_speech = np.append(all_speech, audio)
+                # print("SA")
+    except Exception as es:
+        recording_on = "INTERRUPTED"
+        return print(es)
 
 
 
+transcription_thread: threading.Thread
 sock = Sock(app)
 sockets = []
 @app.route("/")
 def home():
+    print(threading.enumerate())
     return render_template("vad.html")
 
 
@@ -47,11 +53,14 @@ all_speech = np.array([], dtype=np.float32)
 recording_on = "OFF"
 model = MLXWhisper(lan = 'tr', model_dir="../whisper-v3-turbo")
 online = OnlineASRProcessor(model)
+previous_length = 0
 @sock.route("/save")
 def save_audio(ws):
-    receiver_thread = threading.Thread(target = receive_audio, args = [ws])
-    receiver_thread.start()
-    previous_length = 0
+    global transcription_thread
+    global previous_length
+    transcription_thread = threading.current_thread()
+    receiver_thread = threading.Thread(target = receive_audio, args = [ws]).start()
+    print(threading.enumerate())
     while True:
         if recording_on == "ON":
             length_of_new_frame = len(all_speech) - previous_length
@@ -71,9 +80,13 @@ def save_audio(ws):
                 commited, rest = online.process_iter()
                 ws.send(f"{commited[2]} {rest[2]}")
                 previous_length += length_of_new_frame
-
             else:
                 pass 
+
+        elif recording_on == "INTERRUPTED":
+            return print("Out of the while loop")
+
+            
 
 
 
