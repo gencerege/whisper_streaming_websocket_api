@@ -23,10 +23,9 @@ def receive_audio(ws):
                 audio_file.setframerate(16000)
                 audio_file.writeframes(b''.join(all_speech_int))
                 audio_file.close()
-                ws.send("Recorded Segment Saved")
                 recording_on = "PAUSED"
 
-            else: 
+            else:   
                 print("aaa")
                 recording_on = "ON"
                 # ws.send("Voice Received\n")
@@ -40,7 +39,6 @@ def receive_audio(ws):
 
 
 
-transcription_thread: threading.Thread
 sock = Sock(app)
 sockets = []
 @app.route("/")
@@ -58,11 +56,10 @@ previous_length = 0
 def save_audio(ws):
     global transcription_thread
     global previous_length
-    transcription_thread = threading.current_thread()
     receiver_thread = threading.Thread(target = receive_audio, args = [ws]).start()
     print(threading.enumerate())
-    while True:
-        if recording_on == "ON":
+    while recording_on == "ON" or recording_on == "PAUSED" or previous_length < len(all_speech):
+        if previous_length < len(all_speech):
             length_of_new_frame = len(all_speech) - previous_length
             chunk_length = 15872
             if length_of_new_frame >= 15872:
@@ -70,7 +67,10 @@ def save_audio(ws):
                 # ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
                 online.insert_audio_chunk(all_speech[previous_length:previous_length + chunk_length])
                 commited, rest = online.process_iter()
-                ws.send(f"{commited[2]} {rest[2]}")
+                try:
+                    ws.send(f"{commited[2]} {rest[2]}")
+                except:
+                    print("Could not send last block. Will send once the connection is reopened")    
                 previous_length += chunk_length
 
             elif 15872 > length_of_new_frame > 0:
@@ -78,13 +78,17 @@ def save_audio(ws):
                 # ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
                 online.insert_audio_chunk(all_speech[previous_length:previous_length + length_of_new_frame])
                 commited, rest = online.process_iter()
-                ws.send(f"{commited[2]} {rest[2]}")
+                try:
+                    ws.send(f"{commited[2]} {rest[2]}")
+                except:
+                    print("Could not send last block. Will send once the connection is reopened")  
                 previous_length += length_of_new_frame
             else:
                 pass 
-
-        elif recording_on == "INTERRUPTED":
-            return print("Out of the while loop")
+    
+    return print("Websocket thread closed")
+        # elif recording_on == "INTERRUPTED":
+        #     return print("Out of the while loop")
 
             
 

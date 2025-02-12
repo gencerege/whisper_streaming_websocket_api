@@ -4,9 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
+    <style>
+      .flex-container {
+        display: flex;
+        align-items: center; /* You can use 'baseline' if you prefer */
+        gap: 1rem;           /* Adds some space between the button and paragraph */
+      }
+      p {
+        margin: 0;           /* Remove default paragraph margin */
+      }
+    </style>
 </head>
 <body>
-    <button id="record"> Record </button>
+  <div class="flex-container">
+    <button id="record" style="width: 70px; height: 25px;">
+      Start
+    </button>
+    <p id="status"></p>
+  </div>
     <button id="pause" style="display: none;"> Pause </button>
 
     <p id="insert"> </p>
@@ -116,6 +131,7 @@
         myvad = await vad.MicVAD.new({
           model: "v5",
           frameSamples: 512,
+          redemptionFrames: 12,
           onSpeechStart: handleSpeechStart,
           onSpeechEnd: handleSpeechEnd,
           onVADMisfire: handleSpeechEnd,
@@ -126,22 +142,34 @@
     
       // === Button Control Logic ===
       const record_button = document.getElementById('record');
-   
+      const status = document.getElementById('status')
       let isFirstClick = true;
       let sockets = []
       record_button.onclick = () => {
         if (isFirstClick) {
           // Initialize websocket after user clicks record. 
+          
+          status.textContent = "Initializing"
+        
           const socket = new WebSocket('ws://127.0.0.1:5004/save');
-          sockets.push(socket) // Push the newly created websocket to the array so it can be accessed globally.
-          socket.onmessage = (event) => { // Initialize the on message event
-            insert.textContent = event.data
+
+          socket.onerror = (event) => {
+            status.textContent = "Could not connect"
           }
 
-          main(); // Create and Start VAD.
-          isFirstClick = false;
+          socket.onopen = (event) => {
+            status.textContent = "Connected"
+            sockets.push(socket) // Push the newly created websocket to the array so it can be accessed globally.
+            socket.onmessage = (event) => { // Initialize the on message event
+              insert.textContent = event.data
+            }
 
-          record_button.textContent = "Pause";
+            main(); // Create and Start VAD.
+            isFirstClick = false;
+
+            status.textContent = "Start Speaking"
+            record_button.textContent = "Pause";
+          }
 
         } else if (myvad.listening) {
           console.log(myvad.spee)
@@ -150,7 +178,8 @@
           } // Pause triggers onSpeechEnd() so we do not lose any audio when we pause. only if while speech is active
           myvad.pause();
           sockets[0].send("Pause");
-          record_button.textContent = "Record";
+          status.textContent = "Paused."
+          record_button.textContent = "Continue";
         } else if (!myvad.listening) {
           myvad.start();
           record_button.textContent = "Pause";
