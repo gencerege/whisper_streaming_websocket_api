@@ -3,9 +3,11 @@ from flask_sock import Sock
 import numpy as np
 import wave
 import threading
-import time
+from whisper_streaming.whisper_online import *
 
 app = Flask(__name__)
+
+
 
 def receive_audio(ws):
     global recording_on
@@ -41,8 +43,11 @@ sockets = []
 def home():
     return render_template("vad.html")
 
+
 all_speech = np.array([], dtype=np.float32)
 recording_on = False
+model = MLXWhisper(lan = 'tr', model_dir="../whisper-v3-turbo")
+online = OnlineASRProcessor(model)
 @sock.route("/save")
 def save_audio(ws):
     receiver_thread = threading.Thread(target = receive_audio, args = [ws])
@@ -51,14 +56,21 @@ def save_audio(ws):
     while True:
         if recording_on:
             length_of_new_frame = len(all_speech) - previous_length
+            chunk_length = 15872
             if length_of_new_frame >= 15872:
                 # ws.send(f"Full frame: {len(all_speech[previous_length: previous_length + length_of_new_frame])}")
-                ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
-                previous_length += length_of_new_frame
+                # ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
+                online.insert_audio_chunk(all_speech[previous_length:previous_length + chunk_length])
+                commited, rest = online.process_iter()
+                ws.send(f"{commited[2]} {rest[2]}")
+                previous_length += chunk_length
 
             elif 15872 > length_of_new_frame > 0:
                 # ws.send(f"End frame: {length_of_new_frame}")
-                ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
+                # ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
+                online.insert_audio_chunk(all_speech[previous_length:previous_length + length_of_new_frame])
+                commited, rest = online.process_iter()
+                ws.send(f"{commited[2]} {rest[2]}")
                 previous_length += length_of_new_frame
 
             else:

@@ -7,6 +7,7 @@
 </head>
 <body>
     <button id="record"> Record </button>
+    <button id="pause" style="display: none;"> Pause </button>
 
     <p id="insert"> </p>
     
@@ -24,7 +25,7 @@
       const insert = document.getElementById('insert')
       const socket = new WebSocket('ws://127.0.0.1:5004/save');
       socket.onmessage = (event) => {
-        insert.textContent += event.data
+        insert.textContent = event.data
       }
       // Use a single buffer for both pre-buffering and accumulating active speech frames.
       let activeBuffer = [];
@@ -128,13 +129,15 @@
     
       // === Button Control Logic ===
       const record_button = document.getElementById('record');
+   
       let isFirstClick = true;
       record_button.onclick = () => {
         if (isFirstClick) {
           main();
           isFirstClick = false;
 
-          record_button.textContent = "Pause";
+          record_button.textContent = "STOP";
+
         } else if (myvad.listening) {
           console.log(myvad.spee)
           if (speechActive) {
