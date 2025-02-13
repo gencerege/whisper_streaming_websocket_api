@@ -20,10 +20,12 @@
     <button id="record" style="width: 70px; height: 25px;">
       Start
     </button>
+    <button id="stop" style="width: 70px; height: 25px;">
+      Stop
+    </button>
     <p id="status"></p>
   </div>
-    <button id="pause" style="display: none;"> Pause </button>
-
+    
     <p id="insert"> </p>
     
 
@@ -131,7 +133,8 @@
         myvad = await vad.MicVAD.new({
           model: "v5",
           frameSamples: 512,
-          redemptionFrames: 12,
+          redemptionFrames: 16,
+          threshold: 0.4,
           onSpeechStart: handleSpeechStart,
           onSpeechEnd: handleSpeechEnd,
           onVADMisfire: handleSpeechEnd,
@@ -142,6 +145,7 @@
     
       // === Button Control Logic ===
       const record_button = document.getElementById('record');
+      const stop_button = document.getElementById('stop')
       const status = document.getElementById('status')
       let isFirstClick = true;
       let sockets = []
@@ -155,20 +159,26 @@
 
           socket.onerror = (event) => {
             status.textContent = "Could not connect"
+            record_button.textContent = "Start"
+            isFirstClick = true
           }
 
           socket.onopen = (event) => {
-            status.textContent = "Connected"
+            console.log("selam")
             sockets.push(socket) // Push the newly created websocket to the array so it can be accessed globally.
             socket.onmessage = (event) => { // Initialize the on message event
-              insert.textContent = event.data
+            insert.textContent = event.data
             }
-
-            main(); // Create and Start VAD.
-            isFirstClick = false;
-
-            status.textContent = "Start Speaking"
-            record_button.textContent = "Pause";
+            main()
+            .then(() => {
+              // Once VAD is created and started:
+              isFirstClick = false;
+              status.textContent = "Start Speaking";
+              record_button.textContent = "Pause";
+            })
+            .catch((error) => {
+              console.error("Error starting VAD:", error);
+            });
           }
 
         } else if (myvad.listening) {
@@ -182,9 +192,24 @@
           record_button.textContent = "Continue";
         } else if (!myvad.listening) {
           myvad.start();
+          status.textContent = "Speak"
           record_button.textContent = "Pause";
         }
       };
+
+      stop_button.onclick = () => {
+        sockets[0].send("Stop")
+        sockets[0].onerror = null // remove event handlers so that 
+        sockets.pop()
+        
+        status.textContent = "Stopped Session, press start for a new session."
+        myvad.pause()
+        record_button.textContent = "Start"
+        isFirstClick = true
+
+      }
+
+
     </script>
     
 </body>
