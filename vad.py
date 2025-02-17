@@ -39,6 +39,11 @@ def receive_audio(ws):
         recording_on = "INTERRUPTED"
         return print(es)
 
+# TODO: Make stop button work even if the connection was interrupted.
+    # Stop button don't work after interruption because we do not have a websocket anymore. 
+    # If we can reinitialize connection without pressing start only on interrupts then we can make the stop button work. 
+    # In case of interrupts we can have reconnecting status text displayed
+    # and Enable stop button once reconnected. 
 
 sock = Sock(app)
 sockets = []
@@ -63,8 +68,8 @@ def save_audio(ws):
     while recording_on == "ON" or recording_on == "PAUSED" or previous_length < len(all_speech):
         if previous_length < len(all_speech):
             length_of_new_frame = len(all_speech) - previous_length
-            chunk_length = 15872
-            if length_of_new_frame >= 15872:
+            chunk_length = 16384 # TODO: Set Chunk Length from server?
+            if length_of_new_frame >= chunk_length:
                 # ws.send(f"Full frame: {len(all_speech[previous_length: previous_length + length_of_new_frame])}")
                 # ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
                 online.insert_audio_chunk(all_speech[previous_length:previous_length + chunk_length])
@@ -75,15 +80,16 @@ def save_audio(ws):
                     print("Could not send last block. Will send once the connection is reopened")    
                 previous_length += chunk_length
 
-            elif 15872 > length_of_new_frame > 0:
+            elif chunk_length > length_of_new_frame > 0:
                 # ws.send(f"End frame: {length_of_new_frame}")
                 # ws.send(f"Samples sent: audio[{previous_length}:{previous_length+length_of_new_frame}]")
                 online.insert_audio_chunk(all_speech[previous_length:previous_length + length_of_new_frame])
-                commited, rest = online.process_iter()
-                try:
-                    ws.send(f"{commited[2]} {rest[2]}")
-                except:
-                    print("Could not send last block. Will send once the connection is reopened")  
+                if length_of_new_frame > 8 * 512:
+                    commited, rest = online.process_iter()
+                    try:
+                        ws.send(f"{commited[2]} {rest[2]}")
+                    except:
+                        print("Could not send last block. Will send once the connection is reopened")  
                 previous_length += length_of_new_frame
             else:
                 pass 
