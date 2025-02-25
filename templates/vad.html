@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Short Buffer</title>
+    <title> YO </title>
     <style>
       .flex-container {
         display: flex;
@@ -30,135 +30,13 @@
     
 
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script> -->
+    <script src="{{ url_for('static', filename='js/bundle.min.js') }}"></script>
     <script>
-
-      // Utility function to concatenate an array of Float32Arrays into one Float32Array.
-      function concatFrames(frames) {
-        const totalLength = frames.reduce((sum, frame) => sum + frame.length, 0);
-        const result = new Float32Array(totalLength);
-        let offset = 0;
-        frames.forEach(frame => {
-          result.set(frame, offset);
-          offset += frame.length;
-        });
-        return result;
-      }
-
-      // === Configuration Constants ===
-      const PRE_BUFFER_FRAME_COUNT = 8;  // Maintain the last 8 frames as pre-buffer.
-      const TARGET_FRAME_COUNT    = 32;   // Send a chunk once we accumulate 31 frames.
-    
-      // Edge Cases
-        // #1 What happens if first frame has probabilities.isSpeech = true
-        // 
-
       // === Global Variables ===
       let myvad                         // The VAD instance.
-      
       const insert = document.getElementById('insert')
-      
-      // Use a single buffer for both pre-buffering and accumulating active speech frames.
-      let activeBuffer = [];
-      let frameCount = 0
-      // Global flag indicating whether we're in an active speech segment.
-      let speechActive = false;
-      let speechPadFrames = 8;
-      let redemptionFrames = 16
-      let sentRedemptionFrames = 0
-      let threshold = 0.4
-  
     
-    
-      // === onFrameProcessed Callback ===
-      function handleFrameProcessed(probabilities, frame) {
-        if (!speechActive && probabilities.isSpeech >= threshold) {
-          console.log("Frame: ", frameCount, "Speech Prob: ", probabilities.isSpeech, "speechActive: ", speechActive, "typeOfFrame: start")
-
-        } else if (!speechActive) {
-          console.log("Frame: ", frameCount, "Speech Prob: ", probabilities.isSpeech, "speechActive: ", speechActive, "typeOfFrame: noSpeech")
-        }
-
-        if (speechActive && probabilities.isSpeech >= threshold) {
-          console.log("Frame: ", frameCount, "Speech Prob: ", probabilities.isSpeech, "speechActive: ", speechActive, "typeOfFrame: speech")
-        } else if (speechActive && probabilities.isSpeech < threshold - 0.15) {
-          console.log("Frame: ", frameCount, "Speech Prob: ", probabilities.isSpeech, "speechActive: ", speechActive, "typeOfFrame: redemption")
-        } else if (speechActive) {
-          console.log("Frame: ", frameCount, "Speech Prob: ", probabilities.isSpeech, "speechActive: ", speechActive, "typeOfFrame: neutral")
-        }
-
-        activeBuffer.push(frame)
-        frameCount ++
-
-        if (probabilities.isSpeech >= 0.4 && !speechActive) {
-          console.log("Speech Start")
-          speechActive = true
-          speechStartIndex = 0 // FOR SHORT AUDIO BUFFER, SPEECH SHOULD ALWAYS BE EXTRACTED FROM 0 of the active buffer. (0 of the active buffer should always be the first preSpeechFrame)
-          // speechPreviousStart = speechStartAtFrame // here we extract 
-          // speechStartAtFrame = frameCount
-          // speechStartIndex = frameCount - speechPadFrames - 1 // If 20th frame is the first speech positive frame, and we pad by 8 Frames. We need 9 frames [12, 20]
-                                                                // In the activeBuffer 20th frame has index 19, 12th Frame has index 11. So we have a - 1
-                                                                // We can add an if statement for Edge Case #1
-          
-        } // if the frame has probs > thres then we activate speech
-
-        if (probabilities.isSpeech >= threshold && redemptionFrames != 0) { // This has to be before emitChunk > TargetFrameCount part. (to reset redemptionFrames before that)
-          redemptionFrames = 0
-          sentRedemptionFrames = 0 // If we have sent redemption frames previously, these are not redemption frames anymore. They are silence frames. 
-        }
-
-                // If speech start at frame 32 (padding included) and currently we have 55 frames in the buffer.
-        // including frame32 55-32+1 frames. frameCount - start + 1. 
-        if (speechActive) {
-          let endIndex = speechStartIndex + TARGET_FRAME_COUNT
-          let emitChunk = activeBuffer.slice(speechStartIndex, endIndex)
-          if (emitChunk.length >= TARGET_FRAME_COUNT && redemptionFrames <= speechPadFrames) {
-            framesToSend = emitChunk
-            sockets[0].send(concatFrames(framesToSend)) // This will send TARGET_FRAME_COUNT amount of frames, only if redemption frames 
-            console.log("sent 1 second of audio: ", framesToSend.length, " frames from: ", speechStartIndex, " to ", endIndex - 1, " speech start moved to: ", endIndex)
-            speechStartIndex = endIndex// move the speechStartIndex to the next frame.
-            sentRedemptionFrames = redemptionFrames 
-          }
-        }
-
-        if (speechActive && probabilities.isSpeech < threshold - 0.15 && ++redemptionFrames >= 16) {
-          speechActive = false
-       // Speech will always end starting from a previous start index. We need to slice from speechStartIndex to end - speechPadFrames.
-                                        // However, end is not equal to frame count since we are not using the entire audio. 
-                                        // We should just slice from start index, to end of the audioBuffer excluding last redemptionFrames - speechPadFrames
-          console.log("Speech End Detected")
-          if (sentRedemptionFrames == 0) {
-            speechEndIndex = activeBuffer.length - (redemptionFrames - speechPadFrames) // If speech ends at 30th frame and we have 8 padFrames
-                                                                // First frame with isSpeech < threshold is redemptionFrame #1. The Frame before that is the lastSpeechFrame. 
-                                                                // lastSpeechFrame is the 14th frame if there is 16 redemptionFrames. [15-30]
-                                                                // when we pad 8 frames to the 14th frame we have frames [14-22] (9 frames in total)
-                                                                // frame 22 is indexed 21 and 30 - 8 is 22. We would -1 like we would on speechStartIndex, but the end index is not included
-                                                                // when we slice(start, 22) included frames are [start, 21]. assuming start = 0 (1st frame) there are 22 frames as there should. 
-            framesToSend = activeBuffer.slice(speechStartIndex, speechEndIndex)                                                  
-            sockets[0].send(concatFrames(framesToSend))
-            activeBuffer = activeBuffer.slice(speechEndIndex)
-            console.log("No previously sent redemption frames. Sending ", speechStartIndex, " to ", speechEndIndex - 1)
-          } else if (sentRedemptionFrames > 0) {
-            speechEndIndex = speechStartIndex + speechPadFrames - sentRedemptionFrames
-            framesToSend = activeBuffer.slice(speechStartIndex, speechEndIndex)
-            console.log("Previously sent redemption frames: ", sentRedemptionFrames)
-            activeBuffer = activeBuffer.slice(-speechPadFrames)
-            if (framesToSend.length > 0)
-              console.log("Sending redemption frames: ", speechStartIndex, " to ", speechEndIndex - 1, " as padding")
-              sockets[0].send(concatFrames(framesToSend)) 
-          }
-
-          speechStartIndex = 0 // Temporary solution
-          redemptionFrames = 0
-          sentRedemptionFrames = 0
-        }           
-
-        if (!speechActive && activeBuffer.length > speechPadFrames) { // if activeBuffer.length > speechPadFrames, it is with the newly appended frame. 
-          // if the newly appended frame was a speech frame we should not remove the last element of the buffer. So we should have this after toggling speechActive for a frame. 
-          activeBuffer.shift()
-        }
-      }
-      
       // // Default V5 ProcessorOptions
       // export const defaultV5FrameProcessorOptions: FrameProcessorOptions = {
       //   positiveSpeechThreshold: 0.5, // Thresholds may greatly vary depending on the environment its being used. 0.5 is good for a decently high volume mic input.
@@ -169,7 +47,6 @@
       //   minSpeechFrames: 9, // This can be lowered for better single word detection. (But also does not matter since we treat VADMisfire Same as SpeechEnd)
       //   submitUserSpeechOnPause: false,
       // }
-
       // === VAD Instance Creation & Starting ===
       async function main() {
         myvad = await vad.MicVAD.new({
@@ -177,11 +54,19 @@
           frameSamples: 512,
           redemptionFrames: 16,
           preSpeechPadFrames: 8,
+          endSpeechPadFrames: 8,
           positiveSpeechThreshold: 0.4,
           negativeSpeechThreshold: 0.4 - 0.15,
-          onFrameProcessed: handleFrameProcessed
+          minSpeechFrames: 2,
+          numFramesToEmit: 32,
+          onEmitChunk: handleEmitChunk
         });
         myvad.start();
+      }
+
+      function handleEmitChunk(frames) {
+        console.log("Emit Chunk", frames.length)
+        sockets[0].send(frames)
       }
     
       // === Button Control Logic ===
@@ -193,9 +78,10 @@
       record_button.onclick = () => {
         if (isFirstClick) {
           // Initialize websocket after user clicks record. 
+          
           status.textContent = "Initializing"
         
-          const socket = new WebSocket('ws://127.0.0.1:5004/save');
+          const socket = new WebSocket('ws://127.0.0.1:5005/save');
 
           socket.onerror = (event) => {
             status.textContent = "Could not connect"
@@ -222,9 +108,6 @@
           }
 
         } else if (myvad.listening) {
-          if (speechActive) {
-            handleSpeechEnd()
-          } // Pause triggers onSpeechEnd() so we do not lose any audio when we pause. only if while speech is active
           myvad.pause();
           sockets[0].send("Pause");
           status.textContent = "Paused."
@@ -245,9 +128,8 @@
         myvad.pause()
         record_button.textContent = "Start"
         isFirstClick = true
+
       }
-
-
     </script>
     
 </body>
