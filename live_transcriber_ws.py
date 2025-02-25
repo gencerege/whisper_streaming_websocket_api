@@ -1,13 +1,13 @@
 import numpy as np
 import wave
 import threading
+import queue
 
 
 class LiveTranscriberWS():
     def __init__(self, ws):
         self.recording_status = "OFF" # PAUSED, STOPPED, INTERRUPTED
         self.all_speech = np.array([], dtype = np.float32)
-        self.previous_length = 0
         self.ws = ws
         self.setup_receiving()
    
@@ -17,6 +17,7 @@ class LiveTranscriberWS():
         
     def receive_audio(self): # add a save on stop/pause parameter.
         self.recording_status = "ON"
+        self.audio_queue = queue.Queue(-1)
         try: 
             while True:
                 data = self.ws.receive()
@@ -28,12 +29,12 @@ class LiveTranscriberWS():
                     self.save_audio()
                 else:
                     audio = np.frombuffer(data, dtype = np.float32)
+                    self.audio_queue.put(audio)
                     self.all_speech = np.append(self.all_speech, audio)
 
         except Exception as es:
             self.recording_status = "INTERRUPTED"
             return print(es)
-
 
     def save_audio(self):
         all_speech_int = (self.all_speech * 32767).astype(np.int16)
@@ -46,34 +47,29 @@ class LiveTranscriberWS():
 
     def transcribe(self, online):
         chunk_length = 16384
-        while self.recording_status == "ON" or self.recording_status == "PAUSED" or self.previous_length < len(self.all_speech):
-            if self.previous_length < len(self.all_speech):
-                length_of_new_frame = len(self.all_speech) - self.previous_length
-                if length_of_new_frame >= chunk_length:
-                    online.insert_audio_chunk(self.all_speech[self.previous_length:self.previous_length + chunk_length])
+        while self.recording_status == "ON" or self.recording_status == "PAUSED":
+                try: 
+                    audio = self.audio_queue.get(timeout = 1)
+                except queue.Empty:
+                    if self.recording_status == "STOPPED":
+                        online.init()
+                    continue
+                
+                if len(audio) >= chunk_length:
+                    online.insert_audio_chunk(audio)
                     commited, rest = online.process_iter()
-                    self.previous_length += chunk_length
                     try:
                         self.ws.send(f"{commited[2]} {rest[2]}")
                     except:
                         print("Could not send last block. Will send once connection is reopened")
-
-                    
-                elif chunk_length > length_of_new_frame > 0:
-                    online.insert_audio_chunk(self.all_speech[self.previous_length:self.previous_length + length_of_new_frame])
-                    self.previous_length += length_of_new_frame
-                    if length_of_new_frame > 8 * 512:
+ 
+                elif chunk_length > len(audio) > 0:
+                    online.insert_audio_chunk(audio)
+                    if len(audio) > 8 * 512:
                         commited, rest = online.process_iter()
-                        
                         try:
                             self.ws.send(f"{commited[2]} {rest[2]}")
                         except:
                             print("Could not send last block. Will send once connection is reopened")
-                        
-
-        if self.recording_status == "STOPPED":
-            online.init()
-            self.all_speech = np.array([], dtype = np.float32)
-            self.previous_length = 0
 
         return print("Websocket thread closed")

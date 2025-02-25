@@ -81,7 +81,7 @@
           
           status.textContent = "Initializing"
         
-          const socket = new WebSocket('ws://127.0.0.1:5005/save');
+          const socket = new WebSocket('ws://127.0.0.1:5000/save');
 
           socket.onerror = (event) => {
             status.textContent = "Could not connect"
