@@ -1,15 +1,14 @@
+.gitignore
 output.wav
 output0.wav
 output1.wav
 vad_copy.py
 templates/vad_copy.html
 whisper_streaming/line_packet.py
-.gitignore
-.gitignore
 whisper_streaming/silero_vad_iterator.py
-.gitignore
 whisper_streaming/whisper_online.py
 whisper_streaming/whisper_online_server.py
 whisper_streaming/README.md
 whisper_streaming/LICENSE
 vac_output.log
+.DS_Store

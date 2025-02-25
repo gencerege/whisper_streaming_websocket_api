@@ -87,8 +87,6 @@
           console.log("Frame: ", frameCount, "Speech Prob: ", probabilities.isSpeech, "speechActive: ", speechActive, "typeOfFrame: neutral")
         }
 
-
-        
         activeBuffer.push(frame)
         frameCount ++
 
@@ -122,7 +120,7 @@
             
             if (framesToSend.length > 0)
               console.log("Sending redemption frames: ", speechStartIndex, " to ", speechEndIndex - 1, " as padding")
-            sockets[0].send(concatFrames(framesToSend)) 
+              sockets[0].send(concatFrames(framesToSend)) 
           }
 
           speechStartIndex = 2500000000000000 // Temporary solution
@@ -151,38 +149,6 @@
         }
       }
     
-      // // === onSpeechStart Callback ===
-      // function handleSpeechStart() {
-      //   console.log("Speech Start detected.");
-      //   speechActive = true;
-      //   // No need to reinitialize activeBuffer here since it already holds the pre-buffer frames.
-      // }
-    
-      // // === onSpeechEnd Callback ===
-      // function handleSpeechEnd(audio) {
-      //   console.log("Speech End detected.");
-      //   speechActive = false;
-    
-      //   // If there are any frames left in activeBuffer, send them as the final chunk.
-      //   if (activeBuffer.length > 0) {
-      //     const finalChunk = concatFrames(activeBuffer);
-      //     sockets[0].send(finalChunk.buffer);
-      //     console.log("Sent remaining chunk of", finalChunk.length, "samples.");
-      //   }
-    
-        // Update activeBuffer to keep the last PRE_BUFFER_FRAME_COUNT frames for the next speech segment. 
-        // This causes repetition. How?
-        // if we have a speechStart event very close to a SpeechEnd event then the section sliced here will be sent twice. 
-        // For example if a speech end is detected on merhaba bu (END) and after 3 frames, we have (START) the next frame to be sent will start from bu again. 
-        // This start from bu should not happen. 
-        // Why did we implement this in the first place?
-        // if activeBuffer is completely empty this should not be a problem. lets assume we instantly get speechStart after speech end. 
-        // in that case if there is pre speech, it is most likely in the previous frame already. 
-        // or we get 1 frame of no speech and then speech Start. Which should be fine too as it will almost be continuous now. 
-        // We do not need to save prepend buffer like this 
-      //   // activeBuffer = activeBuffer.slice(-PRE_BUFFER_FRAME_COUNT);
-      //   activeBuffer = []
-      // }
       // // Default V5 ProcessorOptions
       // export const defaultV5FrameProcessorOptions: FrameProcessorOptions = {
       //   positiveSpeechThreshold: 0.5, // Thresholds may greatly vary depending on the environment its being used. 0.5 is good for a decently high volume mic input.
@@ -193,17 +159,16 @@
       //   minSpeechFrames: 9, // This can be lowered for better single word detection. (But also does not matter since we treat VADMisfire Same as SpeechEnd)
       //   submitUserSpeechOnPause: false,
       // }
+
       // === VAD Instance Creation & Starting ===
       async function main() {
         myvad = await vad.MicVAD.new({
           model: "v5",
           frameSamples: 512,
           redemptionFrames: 16,
+          preSpeechPadFrames: 8,
           positiveSpeechThreshold: 0.4,
           negativeSpeechThreshold: 0.4 - 0.15,
-          // onSpeechStart: handleSpeechStart,
-          // onSpeechEnd: handleSpeechEnd,
-          // onVADMisfire: handleSpeechEnd,
           onFrameProcessed: handleFrameProcessed
         });
         myvad.start();
@@ -218,7 +183,6 @@
       record_button.onclick = () => {
         if (isFirstClick) {
           // Initialize websocket after user clicks record. 
-          
           status.textContent = "Initializing"
         
           const socket = new WebSocket('ws://127.0.0.1:5004/save');
@@ -230,7 +194,6 @@
           }
 
           socket.onopen = (event) => {
-            console.log("selam")
             sockets.push(socket) // Push the newly created websocket to the array so it can be accessed globally.
             socket.onmessage = (event) => { // Initialize the on message event
             insert.textContent = event.data
@@ -271,7 +234,6 @@
         myvad.pause()
         record_button.textContent = "Start"
         isFirstClick = true
-
       }
 
 

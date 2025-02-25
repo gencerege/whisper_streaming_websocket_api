@@ -55,7 +55,7 @@ def home():
 
 all_speech = np.array([], dtype=np.float32)
 recording_on = "OFF"
-model = MLXWhisper(lan = 'tr', model_dir="../whisper-v3-turbo")
+model = MLXWhisper(lan = 'tr', model_dir="../models/whisper-v3-turbo-mlx")
 online = OnlineASRProcessor(model)
 previous_length = 0
 @sock.route("/save")
