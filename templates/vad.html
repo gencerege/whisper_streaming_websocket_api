@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Short Buffer</title>
     <style>
       .flex-container {
         display: flex;
@@ -64,7 +64,7 @@
       // Global flag indicating whether we're in an active speech segment.
       let speechActive = false;
       let speechPadFrames = 8;
-      let redemptionFrames = 0
+      let redemptionFrames = 16
       let sentRedemptionFrames = 0
       let threshold = 0.4
   
@@ -90,21 +90,45 @@
         activeBuffer.push(frame)
         frameCount ++
 
-        if (probabilities.isSpeech >= threshold && redemptionFrames != 0) {
+        if (probabilities.isSpeech >= 0.4 && !speechActive) {
+          console.log("Speech Start")
+          speechActive = true
+          speechStartIndex = 0 // FOR SHORT AUDIO BUFFER, SPEECH SHOULD ALWAYS BE EXTRACTED FROM 0 of the active buffer. (0 of the active buffer should always be the first preSpeechFrame)
+          // speechPreviousStart = speechStartAtFrame // here we extract 
+          // speechStartAtFrame = frameCount
+          // speechStartIndex = frameCount - speechPadFrames - 1 // If 20th frame is the first speech positive frame, and we pad by 8 Frames. We need 9 frames [12, 20]
+                                                                // In the activeBuffer 20th frame has index 19, 12th Frame has index 11. So we have a - 1
+                                                                // We can add an if statement for Edge Case #1
+          
+        } // if the frame has probs > thres then we activate speech
+
+        if (probabilities.isSpeech >= threshold && redemptionFrames != 0) { // This has to be before emitChunk > TargetFrameCount part. (to reset redemptionFrames before that)
           redemptionFrames = 0
           sentRedemptionFrames = 0 // If we have sent redemption frames previously, these are not redemption frames anymore. They are silence frames. 
         }
 
-        if (speechActive && probabilities.isSpeech < threshold - 0.15) {
-          redemptionFrames++
+                // If speech start at frame 32 (padding included) and currently we have 55 frames in the buffer.
+        // including frame32 55-32+1 frames. frameCount - start + 1. 
+        if (speechActive) {
+          let endIndex = speechStartIndex + TARGET_FRAME_COUNT
+          let emitChunk = activeBuffer.slice(speechStartIndex, endIndex)
+          if (emitChunk.length >= TARGET_FRAME_COUNT && redemptionFrames <= speechPadFrames) {
+            framesToSend = emitChunk
+            sockets[0].send(concatFrames(framesToSend)) // This will send TARGET_FRAME_COUNT amount of frames, only if redemption frames 
+            console.log("sent 1 second of audio: ", framesToSend.length, " frames from: ", speechStartIndex, " to ", endIndex - 1, " speech start moved to: ", endIndex)
+            speechStartIndex = endIndex// move the speechStartIndex to the next frame.
+            sentRedemptionFrames = redemptionFrames 
+          }
         }
 
-        if (redemptionFrames >= 16) {
+        if (speechActive && probabilities.isSpeech < threshold - 0.15 && ++redemptionFrames >= 16) {
           speechActive = false
-          speechEndAtFrame = frameCount
+       // Speech will always end starting from a previous start index. We need to slice from speechStartIndex to end - speechPadFrames.
+                                        // However, end is not equal to frame count since we are not using the entire audio. 
+                                        // We should just slice from start index, to end of the audioBuffer excluding last redemptionFrames - speechPadFrames
           console.log("Speech End Detected")
           if (sentRedemptionFrames == 0) {
-            speechEndIndex = speechEndAtFrame - speechPadFrames // If speech ends at 30th frame and we have 8 padFrames
+            speechEndIndex = activeBuffer.length - (redemptionFrames - speechPadFrames) // If speech ends at 30th frame and we have 8 padFrames
                                                                 // First frame with isSpeech < threshold is redemptionFrame #1. The Frame before that is the lastSpeechFrame. 
                                                                 // lastSpeechFrame is the 14th frame if there is 16 redemptionFrames. [15-30]
                                                                 // when we pad 8 frames to the 14th frame we have frames [14-22] (9 frames in total)
@@ -112,43 +136,29 @@
                                                                 // when we slice(start, 22) included frames are [start, 21]. assuming start = 0 (1st frame) there are 22 frames as there should. 
             framesToSend = activeBuffer.slice(speechStartIndex, speechEndIndex)                                                  
             sockets[0].send(concatFrames(framesToSend))
+            activeBuffer = activeBuffer.slice(speechEndIndex)
             console.log("No previously sent redemption frames. Sending ", speechStartIndex, " to ", speechEndIndex - 1)
           } else if (sentRedemptionFrames > 0) {
             speechEndIndex = speechStartIndex + speechPadFrames - sentRedemptionFrames
             framesToSend = activeBuffer.slice(speechStartIndex, speechEndIndex)
             console.log("Previously sent redemption frames: ", sentRedemptionFrames)
-            
+            activeBuffer = activeBuffer.slice(-speechPadFrames)
             if (framesToSend.length > 0)
               console.log("Sending redemption frames: ", speechStartIndex, " to ", speechEndIndex - 1, " as padding")
               sockets[0].send(concatFrames(framesToSend)) 
           }
 
-          speechStartIndex = 2500000000000000 // Temporary solution
+          speechStartIndex = 0 // Temporary solution
           redemptionFrames = 0
           sentRedemptionFrames = 0
         }           
 
-        if (probabilities.isSpeech >= 0.4 && !speechActive) {
-          console.log("Speech Start")
-          speechActive = true
-          speechStartAtFrame = frameCount
-          speechStartIndex = frameCount - speechPadFrames - 1 // If 20th frame is the first speech positive frame, and we pad by 8 Frames. We need 9 frames [12, 20]
-                                                                // In the activeBuffer 20th frame has index 19, 12th Frame has index 11. So we have a - 1
-                                                                // We can add an if statement for Edge Case #1
-        }
-        // If speech start at frame 32 (padding included) and currently we have 55 frames in the buffer.
-        // including frame32 55-32+1 frames. frameCount - start + 1. 
-        if (speechActive) {
-          if (frameCount - speechStartIndex >= TARGET_FRAME_COUNT && redemptionFrames <= speechPadFrames) {
-            framesToSend = activeBuffer.slice(speechStartIndex, frameCount)
-            sockets[0].send(concatFrames(framesToSend)) // This will send TARGET_FRAME_COUNT amount of frames, only if redemption frames 
-            console.log("sent 1 second of audio: ", framesToSend.length, " frames from: ", speechStartIndex, " to ", frameCount - 1, " speech start moved to: ", frameCount)
-            speechStartIndex = frameCount // move the speechStartIndex to the next frame.
-            sentRedemptionFrames = redemptionFrames
-          }
+        if (!speechActive && activeBuffer.length > speechPadFrames) { // if activeBuffer.length > speechPadFrames, it is with the newly appended frame. 
+          // if the newly appended frame was a speech frame we should not remove the last element of the buffer. So we should have this after toggling speechActive for a frame. 
+          activeBuffer.shift()
         }
       }
-    
+      
       // // Default V5 ProcessorOptions
       // export const defaultV5FrameProcessorOptions: FrameProcessorOptions = {
       //   positiveSpeechThreshold: 0.5, // Thresholds may greatly vary depending on the environment its being used. 0.5 is good for a decently high volume mic input.
@@ -194,6 +204,7 @@
           }
 
           socket.onopen = (event) => {
+            console.log("selam")
             sockets.push(socket) // Push the newly created websocket to the array so it can be accessed globally.
             socket.onmessage = (event) => { // Initialize the on message event
             insert.textContent = event.data
