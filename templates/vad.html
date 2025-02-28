@@ -90,7 +90,6 @@
           }
 
           socket.onopen = (event) => {
-            console.log("selam")
             sockets.push(socket) // Push the newly created websocket to the array so it can be accessed globally.
             socket.onmessage = (event) => { // Initialize the on message event
             insert.textContent = event.data
