@@ -9,6 +9,8 @@ class LiveTranscriberWS():
         self.recording_status = "OFF" # PAUSED, STOPPED, INTERRUPTED
         self.all_speech = np.array([], dtype = np.float32)
         self.online = online
+        self.audio_queue = queue.Queue(-1)
+        self.session = 0
    
     def setup(self, ws, send_transcript = True):
         self.ws = ws
@@ -21,7 +23,6 @@ class LiveTranscriberWS():
    
     def receive_audio(self): # add a save on stop/pause parameter.
         self.recording_status = "ON"
-        self.audio_queue = queue.Queue(-1)
         try: 
             while True:
                 data = self.ws.receive()
@@ -30,6 +31,8 @@ class LiveTranscriberWS():
                     self.save_audio()
                 elif data == "Stop": 
                     self.recording_status = "STOPPED"
+                    self.session += 1
+                    self.audio_queue.put(self.session)
                     self.save_audio()
                     break
                 else:
@@ -57,10 +60,12 @@ class LiveTranscriberWS():
         while self.recording_status == "ON" or self.recording_status == "PAUSED" or not self.audio_queue.empty():
                 try: 
                     audio = self.audio_queue.get(timeout = 1)
-                except queue.Empty:
-                    if self.recording_status == "STOPPED":
+                    if isinstance(audio, int):
                         self.online.init()
                         self.all_speech = np.array([], np.float32)
+                        print(f"Ending Session {audio}")
+                        continue
+                except queue.Empty:
                     continue
                 
                 if len(audio) >= chunk_length:
@@ -74,9 +79,9 @@ class LiveTranscriberWS():
  
                 elif chunk_length > len(audio) > 0:
                     self.online.insert_audio_chunk(audio)
-                    if self.send_transcript == True:
-                        if len(audio) > 8 * 512:
-                            self.commited, self.rest = self.online.process_iter()
+                    if len(audio) > 8 * 512:
+                        self.commited, self.rest = self.online.process_iter()
+                        if self.send_transcript == True:
                             try:
                                 self.ws.send(f"{self.commited[2]} {self.rest[2]}")
                             except:

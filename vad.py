@@ -28,9 +28,6 @@ def save_audio(ws):
     #     time.sleep(5)
     #     print(f"{transcriber.commited[2]}{transcriber.rest[2]}")
         
- 
-
-
     print("Websocket Closed")
 
 
