@@ -10,8 +10,9 @@ class LiveTranscriberWS():
         self.all_speech = np.array([], dtype = np.float32)
         self.online = online
    
-    def setup(self, ws):
+    def setup(self, ws, send_transcript = True):
         self.ws = ws
+        self.send_transcript = send_transcript
         self.receiver_thread = threading.Thread(target = self.receive_audio)
         self.transcriber_thread = threading.Thread(target = self.transcribe)
 
@@ -53,7 +54,7 @@ class LiveTranscriberWS():
         chunk_length = 16384
         self.commited = ""
         self.rest = ""
-        while self.recording_status == "ON" or self.recording_status == "PAUSED":
+        while self.recording_status == "ON" or self.recording_status == "PAUSED" or not self.audio_queue.empty():
                 try: 
                     audio = self.audio_queue.get(timeout = 1)
                 except queue.Empty:
@@ -65,18 +66,20 @@ class LiveTranscriberWS():
                 if len(audio) >= chunk_length:
                     self.online.insert_audio_chunk(audio)
                     self.commited, self.rest = self.online.process_iter()
-                    try:
-                        self.ws.send(f"{self.commited[2]} {self.rest[2]}")
-                    except:
-                        print("Could not send last block. Will send once connection is reopened")
- 
-                elif chunk_length > len(audio) > 0:
-                    self.online.insert_audio_chunk(audio)
-                    if len(audio) > 8 * 512:
-                        self.commited, self.rest = self.online.process_iter()
+                    if self.send_transcript == True:
                         try:
                             self.ws.send(f"{self.commited[2]} {self.rest[2]}")
                         except:
                             print("Could not send last block. Will send once connection is reopened")
-
+ 
+                elif chunk_length > len(audio) > 0:
+                    self.online.insert_audio_chunk(audio)
+                    if self.send_transcript == True:
+                        if len(audio) > 8 * 512:
+                            self.commited, self.rest = self.online.process_iter()
+                            try:
+                                self.ws.send(f"{self.commited[2]} {self.rest[2]}")
+                            except:
+                                print("Could not send last block. Will send once connection is reopened")
         return print("Transcribe Thread Closed")
+    

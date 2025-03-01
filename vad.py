@@ -22,8 +22,6 @@ def home():
 @sock.route("/save")
 def save_audio(ws):
     transcriber.setup(ws)
-
-    
     transcriber.transcriber_thread.join() # Default Use, transcript is sent to client.
 
     # while True: # or you can remove the above line and use your own loop to access and process transcript. 

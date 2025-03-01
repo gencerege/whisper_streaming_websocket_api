@@ -78,7 +78,9 @@
       record_button.onclick = () => {
         if (isFirstClick) {
           // Initialize websocket after user clicks record. 
-          
+          isFirstClick = false; // We have to make this false so that we cannot initialize two websockets.
+                                // Previously, this was after VAD initialization, and double click before vad initializes 
+                                // Resulted in two ws threads at serverside. 
           status.textContent = "Initializing"
         
           const socket = new WebSocket('ws://127.0.0.1:5000/save');
@@ -97,12 +99,12 @@
             main()
             .then(() => {
               // Once VAD is created and started:
-              isFirstClick = false;
               status.textContent = "Start Speaking";
               record_button.textContent = "Pause";
             })
             .catch((error) => {
               console.error("Error starting VAD:", error);
+              isFirstClick = true
             });
           }
 
@@ -127,7 +129,6 @@
         myvad.pause()
         record_button.textContent = "Start"
         isFirstClick = true
-
       }
     </script>
     
