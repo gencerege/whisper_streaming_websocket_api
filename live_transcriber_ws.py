@@ -2,6 +2,7 @@ import numpy as np
 import wave
 import threading
 import queue
+import json
 
 
 class LiveTranscriberWS():
@@ -19,7 +20,6 @@ class LiveTranscriberWS():
         self.transcriber_thread = threading.Thread(target = self.transcribe)
 
         self.receiver_thread.start()
-        self.transcriber_thread.start()
    
     def receive_audio(self): # add a save on stop/pause parameter.
         self.recording_status = "ON"
@@ -31,10 +31,13 @@ class LiveTranscriberWS():
                     self.save_audio()
                 elif data == "Stop": 
                     self.recording_status = "STOPPED"
-                    self.session += 1
                     self.audio_queue.put(self.session)
                     self.save_audio()
                     break
+                elif isinstance(data, str):
+                    self.vad_options = json.loads(data)
+                    self.transcriber_thread.start()
+                    print(self.vad_options)
                 else:
                     audio = np.frombuffer(data, dtype = np.float32)
                     self.audio_queue.put(audio)
@@ -54,7 +57,7 @@ class LiveTranscriberWS():
         audio_file.close()
 
     def transcribe(self):
-        chunk_length = 16384
+        chunk_length = self.vad_options["frameSamples"] * self.vad_options["numFramesToEmit"]
         self.commited = ""
         self.rest = ""
         while self.recording_status == "ON" or self.recording_status == "PAUSED" or not self.audio_queue.empty():
@@ -63,7 +66,8 @@ class LiveTranscriberWS():
                     if isinstance(audio, int):
                         self.online.init()
                         self.all_speech = np.array([], np.float32)
-                        print(f"Ending Session {audio}")
+                        self.session += 1
+                        print(f"Ending Session {audio}, next Session {self.session}")
                         continue
                 except queue.Empty:
                     continue
@@ -79,7 +83,7 @@ class LiveTranscriberWS():
  
                 elif chunk_length > len(audio) > 0:
                     self.online.insert_audio_chunk(audio)
-                    if len(audio) > 8 * 512:
+                    if len(audio) > self.vad_options['endSpeechPadFrames'] * self.vad_options['frameSamples']:
                         self.commited, self.rest = self.online.process_iter()
                         if self.send_transcript == True:
                             try:

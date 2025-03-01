@@ -98,6 +98,8 @@
             }
             main()
             .then(() => {
+              const vad_options = (({frameSamples, numFramesToEmit, endSpeechPadFrames, redemptionFrames}) => ({frameSamples, numFramesToEmit, endSpeechPadFrames, redemptionFrames}))(myvad.options)
+              sockets[0].send(JSON.stringify(vad_options))
               // Once VAD is created and started:
               status.textContent = "Start Speaking";
               record_button.textContent = "Pause";
