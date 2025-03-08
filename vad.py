@@ -3,7 +3,13 @@ from flask_sock import Sock
 from whisper_streaming.whisper_online import *
 from live_transcriber_ws import LiveTranscriberWS
 import threading
+import logging
 
+
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(filename = 'transcript_log.log', filemode = 'w', level = 1000)
+logging.addLevelName(1000, "CUSTOM_VAC_LEVEL")
 app = Flask(__name__)    
 
 model = MLXWhisper(lan = 'tr', model_dir="../models/whisper-v3-turbo-mlx")

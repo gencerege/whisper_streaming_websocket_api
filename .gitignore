@@ -5,3 +5,6 @@ output.wav
 static/model.onnx
 static/silero_vad_legacy.onnx
 __pycache__/
+transcript_log.log
+random_slowdown_ex1.log
+tr-log.log
